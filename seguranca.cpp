@@ -85,9 +85,8 @@ void loop() {
 
 float lerTensao() {
   int raw = analogRead(pinoVBat);
-  // Compensação do divisor 15k/10k (Vin = Vout * 2.5)
-  float vOut = (raw * V_REF) / ADC_RES;
-  return vOut * 2.5;
+  float vOut = (raw * 3.3) / 4095.0;
+  return vOut * 3.0; 
 }
 
 float lerTemperatura() {
