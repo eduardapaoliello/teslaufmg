@@ -154,13 +154,11 @@ void loop() {
     pararMotores();
   }
 
-  // Envio WiFi (a cada 100ms)
   if (agora - ultimoEnvio >= 100) {
     enviarDados(tensao, corrente, potencia, energiaAcumulada_Wh);
     ultimoEnvio = agora;
   }
 
-  // Gravação no SD (a cada 500ms para preservar o cartão)
   if (agora - ultimoLogSD >= 500) {
     salvarNoSD(tensao, corrente, potencia, energiaAcumulada_Wh, temperatura);
     ultimoLogSD = agora;
