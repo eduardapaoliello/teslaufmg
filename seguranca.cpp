@@ -2,20 +2,23 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <FS.h>
+#include <SD.h>
+#include <SPI.h>
 
 // =============================================
 // CONFIGURAÇÕES DE REDE
 // =============================================
 const char* ssid      = "SUA_REDE_WIFI";
 const char* password  = "SUA_SENHA_WIFI";
-const char* serverURL = "http://192.168.68.105:5000/dados"; // IP do seu PC
+const char* serverURL = "http://192.168.68.105:5000/dados"; 
 
 // =============================================
 // MAPEAMENTO DE PINOS
 // =============================================
-const int pinoVBat     = 34;   // Divisor de tensão → ADC
-const int pinoCorrente = 35;   // Shunt + op-amp    → ADC
-const int pinoTemp     = 32;   // NTC temperatura   → ADC
+const int pinoVBat     = 34;   
+const int pinoCorrente = 35;   
+const int pinoTemp     = 32;   
 
 const int pinoMotorA1  = 12;
 const int pinoMotorA2  = 13;
@@ -25,52 +28,44 @@ const int pinoEna      = 33;
 const int pinoEnb      = 26;
 
 const int pinoLedR     = 25;
-const int pinoLedG     = 19;
-const int pinoBuzzer   = 18;
+const int pinoLedG     = 22;   // ALTERADO (Era 19, agora é 22 devido ao SD MISO)
+const int pinoBuzzer   = 4;    // ALTERADO (Era 18, agora é 4 devido ao SD CLK)
+
+// Pinos fixos do SD (Protocolo SPI padrão ESP32)
+// SD_MISO = 19
+// SD_MOSI = 23
+// SD_SCK  = 18
+const int pinoSD_CS    = 5;
 
 // =============================================
-// CONSTANTES DO DIVISOR DE TENSÃO
-// R1=10kΩ (superior) e R2=5kΩ (inferior)
-// Fator = (10+5)/5 = 3.0
+// CONSTANTES E VARIÁVEIS TÉCNICAS
 // =============================================
-const float R1_divisor   = 10.0;  // kΩ
-const float R2_divisor   = 5.0;   // kΩ
-const float fatorDivisor = (R1_divisor + R2_divisor) / R2_divisor; // = 3.0
+const float R1_divisor   = 10.0;  
+const float R2_divisor   = 5.0;  
+const float fatorDivisor = (R1_divisor + R2_divisor) / R2_divisor; 
 
-// =============================================
-// CONSTANTES DO SHUNT DE CORRENTE
-// Rshunt=0.1Ω e ganho do op-amp = 15k/1k = 15
-// =============================================
-const float Rshunt     = 0.1;   // Ω
-const float ganhoShunt = 15.0;  // ganho do op-amp
-//=============================================
-// CONSTANTES DO SENSOR DE TEMPERATURA (NTC)
-// =============================================
-const float BETA      = 3950.0;
-const float R0        = 10000.0;
-const float T0        = 298.15;
-const float RES_FIXO  = 10000.0;
+const float Rshunt       = 0.1;   
+const float ganhoShunt   = 15.0;  
 
-// =============================================
-// REFERÊNCIA DO ADC
-// =============================================
+const float BETA         = 3950.0;
+const float R0           = 10000.0;
+const float T0           = 298.15;
+const float RES_FIXO     = 10000.0;
+
 const float V_REF   = 3.3;
 const int   ADC_RES = 4095;
 
-// =============================================
-// LIMITES DE SEGURANÇA
-// =============================================
-const float VOLT_MIN = 6.4;   // Subtensão crítica
-const float VOLT_MAX = 8.4;   // Sobretensão
-const float TEMP_MAX = 50.0;  // Limite térmico
+const float VOLT_MIN = 6.4;  
+const float VOLT_MAX = 8.4;  
+const float TEMP_MAX = 50.0; 
 
-// =============================================
-// VARIÁVEIS GLOBAIS
-// =============================================
 bool sistemaSeguro           = true;
 float energiaAcumulada_Wh    = 0.0;
 unsigned long tempoAnterior  = 0;
 unsigned long ultimoEnvio    = 0;
+unsigned long ultimoLogSD    = 0; // Timer para o SD
+
+const char* nomeArquivo = "/log_energia.csv";
 
 // =============================================
 // PROTÓTIPOS
@@ -80,6 +75,7 @@ float lerCorrente();
 float lerTemperatura();
 void  verificarSeguranca(float v, float t);
 void  enviarDados(float v, float i, float p, float e);
+void  salvarNoSD(float v, float i, float p, float e, float t);
 void  moverFrente(int velocidade);
 void  pararMotores();
 
@@ -89,26 +85,37 @@ void  pararMotores();
 void setup() {
   Serial.begin(115200);
 
-  // Pinos de motor
   pinMode(pinoMotorA1, OUTPUT);
   pinMode(pinoMotorA2, OUTPUT);
   pinMode(pinoMotorB1, OUTPUT);
   pinMode(pinoMotorB2, OUTPUT);
-  pinMode(pinoEna,     OUTPUT);
-  pinMode(pinoEnb,     OUTPUT);
+  pinMode(pinoEna,      OUTPUT);
+  pinMode(pinoEnb,      OUTPUT);
 
-  // Pinos de interface
   pinMode(pinoLedR,   OUTPUT);
   pinMode(pinoLedG,   OUTPUT);
   pinMode(pinoBuzzer, OUTPUT);
 
   pararMotores();
 
-  // LED amarelo durante conexão WiFi
+  // Inicialização do Cartão SD
+  Serial.print("Iniciando cartao SD...");
+  if (!SD.begin(pinoSD_CS)) {
+    Serial.println(" FALHA! Verifique o cartao.");
+  } else {
+    Serial.println(" OK!");
+    File arquivo = SD.open(nomeArquivo, FILE_APPEND);
+    if (arquivo) {
+      if (arquivo.size() == 0) {
+        arquivo.println("Timestamp_ms;Tensao_V;Corrente_A;Potencia_W;Energia_Wh;Temp_C");
+      }
+      arquivo.close();
+    }
+  }
+
   digitalWrite(pinoLedR, HIGH);
   digitalWrite(pinoLedG, HIGH);
 
-  // Conecta WiFi
   Serial.print("Conectando ao WiFi");
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -117,7 +124,6 @@ void setup() {
   }
   Serial.println("\nWiFi conectado! IP: " + WiFi.localIP().toString());
 
-  // LED verde — sistema pronto
   digitalWrite(pinoLedR, LOW);
   digitalWrite(pinoLedG, HIGH);
 
@@ -128,23 +134,18 @@ void setup() {
 // LOOP PRINCIPAL
 // =============================================
 void loop() {
-  // --- 1. LEITURA DOS SENSORES ---
   float tensao      = lerTensao();
   float corrente    = lerCorrente();
   float temperatura = lerTemperatura();
-
-  // --- 2. CÁLCULO DE POTÊNCIA E ENERGIA ---
-  float potencia = tensao * corrente;
+  float potencia    = tensao * corrente;
 
   unsigned long agora      = millis();
   float deltaT_horas       = (agora - tempoAnterior) / 3600000.0;
   energiaAcumulada_Wh     += potencia * deltaT_horas;
   tempoAnterior            = agora;
 
-  // --- 3. VERIFICAÇÃO DE SEGURANÇA ---
   verificarSeguranca(tensao, temperatura);
 
-  // --- 4. CONTROLE DOS MOTORES ---
   if (sistemaSeguro) {
     moverFrente(150);
     digitalWrite(pinoLedG, HIGH);
@@ -153,13 +154,18 @@ void loop() {
     pararMotores();
   }
 
-  // --- 5. ENVIO VIA WIFI (a cada 100ms) ---
+  // Envio WiFi (a cada 100ms)
   if (agora - ultimoEnvio >= 100) {
     enviarDados(tensao, corrente, potencia, energiaAcumulada_Wh);
     ultimoEnvio = agora;
   }
 
-  // --- 6. DEBUG SERIAL ---
+  // Gravação no SD (a cada 500ms para preservar o cartão)
+  if (agora - ultimoLogSD >= 500) {
+    salvarNoSD(tensao, corrente, potencia, energiaAcumulada_Wh, temperatura);
+    ultimoLogSD = agora;
+  }
+
   Serial.printf(
     "V=%.3fV | I=%.4fA | P=%.3fW | E=%.6fWh | T=%.1fC | %s\n",
     tensao, corrente, potencia, energiaAcumulada_Wh,
@@ -170,33 +176,46 @@ void loop() {
 }
 
 // =============================================
-// FUNÇÕES DE SENSORES
+// FUNÇÕES DE SENSORES E LOG
 // =============================================
 
 float lerTensao() {
   int raw = analogRead(pinoVBat);
   float vADC = raw * (V_REF / ADC_RES);
-  return vADC * fatorDivisor;  // Recupera tensão real da bateria
+  return vADC * fatorDivisor;
 }
 
 float lerCorrente() {
   int raw = analogRead(pinoCorrente);
   float vADC = raw * (V_REF / ADC_RES);
-  return vADC / (Rshunt * ganhoShunt);  // Corrente real em Ampères
+  return vADC / (Rshunt * ganhoShunt);
 }
 
 float lerTemperatura() {
   int raw = analogRead(pinoTemp);
-
-  // Detecção de rompimento de chicote
   if (raw > 4000 || raw < 100) return 999.0;
-
   float vOut = raw * (V_REF / ADC_RES);
   float rNTC = RES_FIXO * ((V_REF / vOut) - 1.0);
-
-  // Equação Beta
   float tempK = 1.0 / ((log(rNTC / R0) / BETA) + (1.0 / T0));
   return tempK - 273.15;
+}
+
+void salvarNoSD(float v, float i, float p, float e, float t) {
+  File arquivo = SD.open(nomeArquivo, FILE_APPEND);
+  if (arquivo) {
+    arquivo.print(millis());
+    arquivo.print(";");
+    arquivo.print(v, 3);
+    arquivo.print(";");
+    arquivo.print(i, 4);
+    arquivo.print(";");
+    arquivo.print(p, 3);
+    arquivo.print(";");
+    arquivo.print(e, 6);
+    arquivo.print(";");
+    arquivo.println(t, 1);
+    arquivo.close();
+  }
 }
 
 // =============================================
@@ -210,16 +229,12 @@ void verificarSeguranca(float v, float t) {
   if (erroVolt || erroTemp) {
     sistemaSeguro = false;
     digitalWrite(pinoLedG,  LOW);
-    digitalWrite(pinoLedR,  HIGH);  // Vermelho: erro
+    digitalWrite(pinoLedR,  HIGH);
     digitalWrite(pinoBuzzer, HIGH);
-
-    // Log do tipo de erro
-    if (erroVolt) Serial.println("ERRO: Tensão fora dos limites!");
-    if (erroTemp) Serial.println("ERRO: Temperatura fora dos limites ou chicote rompido!");
   } else {
     sistemaSeguro = true;
     digitalWrite(pinoLedR,   LOW);
-    digitalWrite(pinoLedG,   HIGH); // Verde: seguro
+    digitalWrite(pinoLedG,   HIGH);
     digitalWrite(pinoBuzzer, LOW);
   }
 }
@@ -229,27 +244,18 @@ void verificarSeguranca(float v, float t) {
 // =============================================
 
 void enviarDados(float v, float i, float p, float e) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi desconectado! Reconectando...");
-    WiFi.reconnect();
-    return;
-  }
+  if (WiFi.status() != WL_CONNECTED) return;
 
   HTTPClient http;
   http.begin(serverURL);
   http.addHeader("Content-Type", "application/json");
 
-  String payload = "{";
-  payload += "\"tensao\":"   + String(v, 4) + ",";
-  payload += "\"corrente\":" + String(i, 4) + ",";
-  payload += "\"potencia\":" + String(p, 4) + ",";
-  payload += "\"energia\":"  + String(e, 6);
-  payload += "}";
+  String payload = "{\"tensao\":" + String(v, 4) + 
+                   ",\"corrente\":" + String(i, 4) + 
+                   ",\"potencia\":" + String(p, 4) + 
+                   ",\"energia\":" + String(e, 6) + "}";
 
-  int httpCode = http.POST(payload);
-  if (httpCode < 0) {
-    Serial.println("Erro no envio HTTP: " + String(httpCode));
-  }
+  http.POST(payload);
   http.end();
 }
 
