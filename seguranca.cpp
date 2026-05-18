@@ -28,9 +28,8 @@ const int pinoEna      = 33;
 const int pinoEnb      = 26;
 
 const int pinoLedR     = 25;
-const int pinoLedG     = 22;   // ALTERADO (Era 19, agora é 22 devido ao SD MISO)
-const int pinoBuzzer   = 4;    // ALTERADO (Era 18, agora é 4 devido ao SD CLK)
-
+const int pinoLedG     = 22;   
+const int pinoBuzzer   = 4;
 // Pinos fixos do SD (Protocolo SPI padrão ESP32)
 // SD_MISO = 19
 // SD_MOSI = 23
