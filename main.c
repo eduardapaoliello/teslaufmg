@@ -57,7 +57,6 @@ const float VOLT_MIN = 6.4;
 const float VOLT_MAX = 8.4;  
 const float TEMP_MAX = 50.0; 
 
-// Variáveis de Controle de Estado e Tempo
 bool sistemaSeguro           = true;
 bool rodando                 = false; 
 unsigned long tempo_inicial  = 0;
