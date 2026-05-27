@@ -17,8 +17,8 @@ const char* serverURL = "http://192.168.68.105:5000/dados";
 // MAPEAMENTO DE PINOS (ESP32)
 // =============================================
 const int pinoVBat     = 34;   
-const int pinoCorrente = 35;   
-const int pinoTemp     = 32;   
+const int pinoCorrente = 32;   
+const int pinoTemp     = 33;   
 
 const int pinoMotorA1  = 12;
 const int pinoMotorA2  = 13;
