@@ -1,7 +1,3 @@
-Para juntar os dois códigos, precisamos integrar a máquina de estados baseada em tempo do **Código 1** dentro da estrutura de segurança, telemetria (WiFi/SD) e mapeamento de pinos do ESP32 do **Código 2**.
-Como o Código 2 gerencia os motores através de 4 pinos de direção (pinoMotorA1, A2, B1, B2) e 2 pinos de velocidade PWM (pinoEna, pinoEnb), a lógica de passos (etapas) do Código 1 foi adaptada para controlar a velocidade de forma equivalente. Além disso, a movimentação só acontece se o sistemaSeguro for verdadeiro. Caso ocorra uma falha de subtensão ou superaquecimento, os motores param imediatamente por segurança.
-Aqui está o código unificado:
-```cpp
 #include <math.h>
 #include <Arduino.h>
 #include <WiFi.h>
@@ -31,12 +27,12 @@ const int pinoMotorB2  = 27;
 const int pinoEna      = 33;
 const int pinoEnb      = 26;
 
-const int pinoLedR     = 25; // Substitui o LED_parado do Código 1
-const int pinoLedG     = 22; // Substitui o LED_rodando do Código 1   
+const int pinoLedR     = 25; 
+const int pinoLedG     = 22;
 const int pinoBuzzer   = 4;
 
-const int pinoBotao    = 7;  // Botão de partida do Código 1
-const int pinoTeste    = 2;  // Botão de parada de emergência do Código 1
+const int pinoBotao    = 7;
+const int pinoTeste    = 2;
 const int pinoSD_CS    = 5;
 
 // =============================================
@@ -49,7 +45,6 @@ const float fatorDivisor = (R1_divisor + R2_divisor) / R2_divisor;
 const float Rshunt       = 0.1;   
 const float ganhoShunt   = 15.0;  
 
-// Coeficientes Steinhart-Hart
 const float A = 0.001129241;
 const float B = 0.0002341077;
 const float C = 0.00000008775468;
@@ -112,7 +107,6 @@ void setup() {
 
   pararMotores();
 
-  // Inicialização do Cartão SD
   Serial.print("Iniciando cartao SD...");
   if (!SD.begin(pinoSD_CS)) {
     Serial.println(" FALHA! Verifique o cartao.");
@@ -127,7 +121,6 @@ void setup() {
     }
   }
 
-  // LEDs piscando indicam tentativa de conexão WiFi
   digitalWrite(pinoLedR, HIGH);
   digitalWrite(pinoLedG, HIGH);
 
@@ -139,7 +132,6 @@ void setup() {
   }
   Serial.println("\nWiFi conectado! IP: " + WiFi.localIP().toString());
 
-  // Estado inicializado pronto
   digitalWrite(pinoLedR, LOW);
   digitalWrite(pinoLedG, HIGH);
 
@@ -152,60 +144,50 @@ void setup() {
 void loop() {
   agora = millis(); 
 
-  // Leituras de Sensores
   float tensao      = lerTensao();
   float corrente    = lerCorrente();
   float temperatura = lerTemperatura();
   float potencia    = tensao * corrente;
 
-  // Cálculo de Energia Acumulada
   float deltaT_horas       = (agora - tempoAnterior) / 3600000.0;
   energiaAcumulada_Wh     += potencia * deltaT_horas;
   tempoAnterior            = agora;
 
-  // Monitoramento Crítico de Segurança
   verificarSeguranca(tensao, temperatura);
 
   if (sistemaSeguro) {
-    // Se o botão "teste" for pressionado, interrompe a sequência dos motores
     if (digitalRead(pinoTeste) == LOW) {
         para_tudo();
     }
     
-    // Executa a máquina de estados baseada em tempo do Código 1
     gerencia_motor();
-
-    // Atualização dos LEDs de Status de Operação
-    digitalWrite(pinoLedG, rodando);   // LED Verde acende se estiver executando a rotina
-    digitalWrite(pinoLedR, !rodando);  // LED Vermelho acende se estiver parado/esperando botão
+    digitalWrite(pinoLedG, rodando);
+    digitalWrite(pinoLedR, !rodando); 
   } else {
-    // Se houver falha de hardware, desliga motores e força estado seguro
+    
     para_tudo();
     digitalWrite(pinoLedG, LOW);
     digitalWrite(pinoLedR, HIGH);
-    digitalWrite(pinoBuzzer, HIGH); // Mantém o alarme ativo pela segurança
+    digitalWrite(pinoBuzzer, HIGH);
   }
 
-  // Envio de telemetria a cada 100ms
   if (agora - ultimoEnvio >= 100) {
     enviarDados(tensao, corrente, potencia, energiaAcumulada_Wh);
     ultimoEnvio = agora;
   }
 
-  // Gravação no SD a cada 500ms
   if (agora - ultimoLogSD >= 500) {
     salvarNoSD(tensao, corrente, potencia, energiaAcumulada_Wh, temperatura);
     ultimoLogSD = agora;
   }
 
-  // Monitor Serial para debug
   Serial.printf(
     "V=%.3fV | I=%.4fA | P=%.3fW | E=%.6fWh | T=%.1fC | Rotina=%s | Seg=%s\n",
     tensao, corrente, potencia, energiaAcumulada_Wh,
     temperatura, rodando ? "ATIVO" : "PARADO", sistemaSeguro ? "OK" : "ERRO"
   );
 
-  delay(10); // Reduzido o delay para não quebrar a precisão do millis() na rotina dos motores
+  delay(10);
 }
 
 // =============================================
@@ -280,7 +262,6 @@ void para_tudo() {
 }
 
 void gerencia_motor() {
-    // Se o botão for pressionado em nível lógico BAIXO (PULLUP) e estiver parado
     if (digitalRead(pinoBotao) == LOW && etapa == 0) {
         tempo_inicial = agora; 
         etapa = 1;
@@ -288,29 +269,25 @@ void gerencia_motor() {
         rodando = true;
     }
 
-    // Passo 1: Alarme sonoro inicial (0 a 3 segundos)
     if (etapa == 1 && agora - tempo_inicial > 3000) {
         noTone(pinoBuzzer);
         configurarDirecaoFrente();
-        analogWrite(pinoEna, 255); // Equivalente ao HIGH do código 1
+        analogWrite(pinoEna, 255);
         analogWrite(pinoEnb, 255); 
         etapa++;
     }
 
-    // Passo 2: Reduz velocidade do Motor B pela metade (3 a 5 segundos da partida)
     if (etapa == 2 && agora - tempo_inicial > 5000) {
         analogWrite(pinoEnb, 128); 
         etapa++; 
     }
 
-    // Passo 3: Inverte potências: Motor A em meia velocidade e Motor B no máximo (5 a 7 segundos)
     if (etapa == 3 && agora - tempo_inicial > 7000) {
         analogWrite(pinoEna, 128);
         analogWrite(pinoEnb, 255); 
         etapa++;
     }
 
-    // Passo 4: Fim da linha de tempo (após 9 segundos de execução total), desliga tudo
     if (etapa == 4 && agora - tempo_inicial > 9000) {
         pararMotores();
         etapa = 0;
@@ -357,10 +334,3 @@ void pararMotores() {
   analogWrite(pinoEna, 0);
   analogWrite(pinoEnb, 0);
 }
-
-```
-### O que foi alterado na fusão:
- 1. **Controle Dinâmico:** Substituí a função fixa moverFrente(150) que rodava indefinidamente no loop() original pela chamada de gerencia_motor(), aplicando as variações de velocidade controladas no tempo.
- 2. **Adaptação Ponte H (L298N):** O código original usava apenas pinos EN_A e EN_B assumindo controle direto. Na estrutura do ESP32, para o motor girar para frente, precisamos setar os pinos de direção (pinoMotorX1 em HIGH e pinoMotorX2 em LOW) e injetar o PWM nos pinos de habilitação (pinoEna / pinoEnb).
- 3. **Prioridade de Interrupção por Falha:** Caso ocorra uma falha de leitura (temperatura acima de 50°C ou tensão da bateria fora da faixa), o bloco do else no loop() força a chamada de para_tudo(), impedindo que os motores continuem rodando mesmo se o botão for acionado.
- 4. **Delay Reduzido:** Mudei o delay(100) do final do loop original para delay(10). Um atraso estático longo de 100ms prejudicaria as verificações condicionais baseadas em millis() da máquina de estados do motor, gerando imprecisões no tempo de resposta dos passos.
