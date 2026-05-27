@@ -46,6 +46,9 @@ const float fatorDivisor = (R1_divisor + R2_divisor) / R2_divisor;
 const float Rshunt       = 0.1;   
 const float ganhoShunt   = 15.0;  
 
+const float A = 0.001129241;
+const float B = 0.0002341077;
+const float C = 0.00000008775468;
 const float BETA         = 3950.0;
 const float R0           = 10000.0;
 const float T0           = 298.15;
@@ -193,7 +196,9 @@ float lerTemperatura() {
   if (raw > 4000 || raw < 100) return 999.0;
   float vOut = raw * (V_REF / ADC_RES);
   float rNTC = RES_FIXO * ((V_REF / vOut) - 1.0);
-  float tempK = (1.0f / ((1.0f / T0) + (std::log(r_ntc / R0) / BETA)));
+  float logR = log(rNTC);
+  float umSobreT = A + (B * logR) + (C * logR * logR * logR);
+  float tempK = 1.0 / umSobreT;
   return tempK - 273.15;
 }
 
