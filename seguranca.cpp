@@ -3,19 +3,16 @@
 // =============================================
 // PARÂMETROS E CONSTANTES DE SEGURANÇA
 // =============================================
-const float VOLT_MIN = 6.4;  // Tensão mínima permitida (ex: bateria descarregada)
-const float VOLT_MAX = 8.4;  // Tensão máxima permitida (ex: sobrecarga)
-const float TEMP_MAX = 50.0; // Temperatura máxima permitida em °C
+const float VOLT_MIN = 6.4;
+const float VOLT_MAX = 8.4;
+const float TEMP_MAX = 50.0;
 
-// Pinos de alerta
-const int pinoLedR   = 25;   // LED Vermelho (Erro)
-const int pinoLedG   = 22;   // LED Verde (OK)
-const int pinoBuzzer = 4;    // Buzzer de alarme
+const int pinoLedR   = 25;
+const int pinoLedG   = 22;
+const int pinoBuzzer = 4;
 
-// Variável de controle do estado do sistema
 bool sistemaSeguro = true;
 
-// Protótipos das funções
 void verificarSeguranca(float v, float t);
 void para_tudo();
 
@@ -31,49 +28,41 @@ void setup() {
 
 void loop() {
   // ======================================================================
-  // SIMULAÇÃO DE TESTE (Altere estes valores para testar os gatilhos)
+  // SIMULAÇÃO DE TESTE
   // ======================================================================
-  float tensaoSimulada = 7.4;      // Dentro do range (6.4V a 8.4V)
-  float temperaturaSimulada = 35.5; // Dentro do range (Abaixo de 50°C)
+  float tensaoSimulada = 7.4;
+  float temperaturaSimulada = 35.5;
   // ======================================================================
 
-  // Executa a verificação
   verificarSeguranca(tensaoSimulada, temperaturaSimulada);
 
-  // Lógica de ação baseada no estado de segurança
   if (sistemaSeguro) {
-    // Sistema operando normalmente
     digitalWrite(pinoLedG, HIGH);
     digitalWrite(pinoLedR, LOW);
-    noTone(pinoBuzzer); // Garante que o alarme está desligado
+    noTone(pinoBuzzer);
     
     Serial.printf("SISTEMA OK | V: %.2fV | T: %.1f°C\n", tensaoSimulada, temperaturaSimulada);
   } else {
-    // Bloqueio de emergência ativado
     para_tudo();
     digitalWrite(pinoLedG, LOW);
     digitalWrite(pinoLedR, HIGH);
     
-    // Liga o alarme sonoro (Frequência de 1000Hz)
     tone(pinoBuzzer, 1000); 
     
     Serial.printf("!!! ALERTA DE SEGURANÇA !!! V: %.2fV | T: %.1f°C\n", tensaoSimulada, temperaturaSimulada);
   }
 
-  delay(1000); // Executa a checagem a cada 1 segundo
+  delay(100);
 }
 
 // =============================================
 // FUNÇÃO DE VERIFICAÇÃO (ISOLADA)
 // =============================================
 void verificarSeguranca(float v, float t) {
-  // Retorna verdadeiro se a tensão estiver fora dos limites
   bool erroVolt = (v < VOLT_MIN || v > VOLT_MAX);
   
-  // Retorna verdadeiro se a temperatura passar do limite ou se o sensor falhar (999.0)
   bool erroTemp = (t > TEMP_MAX || t == 999.0);
 
-  // Se houver qualquer erro, desarma o sistema seguro
   if (erroVolt || erroTemp) {
     sistemaSeguro = false;
   } else {
@@ -85,11 +74,5 @@ void verificarSeguranca(float v, float t) {
 // FUNÇÃO DE DESARMAMENTO (ISOLADA)
 // =============================================
 void para_tudo() {
-    // Aqui no código original você limpa as variáveis dos motores.
-    // Para o teste isolado, esta função serve para garantir o desligamento.
     noTone(pinoBuzzer); 
-    
-    // Exemplo: Colocar pinos de ponte H em LOW aqui para cortar os motores fisicamente
-    // digitalWrite(pinoMotorA1, LOW); 
-    // ...
 }
