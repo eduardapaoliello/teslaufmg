@@ -193,7 +193,7 @@ float lerTemperatura() {
   if (raw > 4000 || raw < 100) return 999.0;
   float vOut = raw * (V_REF / ADC_RES);
   float rNTC = RES_FIXO * ((V_REF / vOut) - 1.0);
-  float tempK = 1.0 / ((log(rNTC / R0) / BETA) + (1.0 / T0));
+  float tempK = (1.0f / ((1.0f / T0) + (std::log(r_ntc / R0) / BETA)));
   return tempK - 273.15;
 }
 
