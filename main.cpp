@@ -250,7 +250,7 @@ void verificarSeguranca(float v, float t) {
 }
 
 // =============================================
-// MÁQUINA DE ESTADOS - ROTINA DOS MOTORES (CÓDIGO 1)
+// MÁQUINA DE ESTADOS - ROTINA DOS MOTORES
 // =============================================
 
 void para_tudo() {
